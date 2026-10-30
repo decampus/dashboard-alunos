@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Executivo - Desempenho Acadêmico</title>
+    <!-- Importação de fontes para o visual executivo -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Apache ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
+    <style>
+        :root {
+            /* Paleta Light Executiva */
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --accent-primary: #2563eb;
+            --accent-secondary: #0f172a;
+            --success: #10b981;
+            --danger: #ef4444;
+            
+            --font-sans: 'Inter', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --radius: 6px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.5;
+            padding: 20px;
+        }
+
+        /* Cabeçalho */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-secondary);
+            letter-spacing: -0.025em;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .last-update {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        button {
+            background-color: var(--accent-secondary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-family: var(--font-sans);
+            font-weight: 600;
+            font-size: 0.875rem;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: background-color 0.2s;
+            box-shadow: var(--shadow-sm);
+        }
+
+        button:hover {
+            background-color: #334155;
+        }
+
+        /* Status e Erros */
+        #status-message {
+            background-color: #fee2e2;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: var(--radius);
+            margin-bottom: 20px;
+            font-weight: 600;
+            display: none;
+            border: 1px solid #f87171;
+        }
+
+        /* Layout em Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr; /* Esquerda gráficos, Direita tabela */
+            gap: 20px;
+        }
+
+        .grid-full {
+            grid-column: 1 / -1;
+        }
+
+        .card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: var(--shadow-md);
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-main);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 350px;
+        }
+
+        /* Tabela Estatística */
+        .stats-table-wrapper {
+            overflow-x: auto;
+            max-height: 400px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+
+        th, td {
+            padding: 10px 12px;
+            text-align: right;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #f8fafc;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-align: right;
+        }
+
+        td {
+            font-family: var(--font-mono); /* Números tabulares */
+        }
+        
+        td:first-child, th:first-child {
+            text-align: left;
+            font-family: var(--font-sans);
+            font-weight: 600;
+        }
+
+        /* Layout para os Scatters de Disciplinas */
+        .disciplines-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .mini-chart {
+            height: 250px;
+            width: 100%;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>[BI] Desempenho Acadêmico</h1>
+        <div class="controls">
+            <span class="last-update" id="last-update">Atualizado: --:--:--</span>
+            <button id="btn-refresh" onclick="loadData()">Atualizar Dados</button>
+        </div>
+    </header>
+
+    <div id="status-message"></div>
+
+    <main class="dashboard-grid" id="dashboard-content" style="display: none;">
+        
+        <!-- Seção Superior Direita: Estatísticas (Tabela movida para o topo no layout flexível) -->
+        <div class="card" style="grid-column: 2; grid-row: 1;">
+            <div class="card-title">Visão Estatística por Turno</div>
+            <div class="stats-table-wrapper">
+                <table id="stats-table">
+                    <thead>
+                        <tr>
+                            <th>Turno / Disciplina</th>
+                            <th>Média</th>
+                            <th>Mediana</th>
+                            <th>Desv. Padrão</th>
+                            <th>Alunos</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Seção Superior Esquerda: Influência do Turno -->
+        <div class="card" style="grid-column: 1; grid-row: 1;">
+            <div class="card-title">Impacto do Turno na Média Geral (Distribuição)</div>
+            <div id="chart-boxplot" class="chart-container"></div>
+        </div>
+
+        <!-- Seção Meio: Scatter Plots Separados por Disciplina -->
+        <div class="card grid-full">
+            <div class="card-title">Distribuição de Notas por Aluno (Separado por Disciplina)</div>
+            <div class="disciplines-grid">
+                <div id="chart-scatter-prog" class="mini-chart"></div>
+                <div id="chart-scatter-ia" class="mini-chart"></div>
+                <div id="chart-scatter-bd" class="mini-chart"></div>
+            </div>
+        </div>
+
+        <!-- Seção Inferior: Correlação entre Disciplinas -->
+        <div class="card grid-full">
+            <div class="card-title">Correlação: Programação vs Inteligência Artificial</div>
+            <div id="chart-correlation" class="chart-container" style="height: 400px;"></div>
+        </div>
+
+    </main>
+
+    <script>
+        /**
+         * ==========================================================
+         * VARIÁVEIS DE CONFIGURAÇÃO
+         * ==========================================================
+         * Insira abaixo a URL da sua planilha publicada como CSV.
+         */
+        const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRV_W-ceJm-gA8pbpJ37SLAOxpjdwgdPhy0-Or8Z2jFM74nWfAzhCeQRtHScLlCaopdQdmaaB5dWqks/pub?gid=1429182890&single=true&output=csv"; 
+        
+        // Exemplo de URL válida (substitua pela sua):
+        // const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv";
+
+        const MANDATORY_COLUMNS = ['idaluno', 'turno', 'programacao', 'inteligenciaartificial', 'bancodedados', 'mediageral'];
+
+        // Instâncias do ECharts
+        let chartBoxplot, chartProg, chartIa, chartBd, chartCorr;
+
+        /**
+         * Inicialização e Gestão de Eventos
+         */
+        window.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            loadData();
+            
+            // Responsividade para os gráficos
+            window.addEventListener('resize', () => {
+                if(chartBoxplot) chartBoxplot.resize();
+                if(chartProg) chartProg.resize();
+                if(chartIa) chartIa.resize();
+                if(chartBd) chartBd.resize();
+                if(chartCorr) chartCorr.resize();
+            });
+        });
+
+        function initCharts() {
+            chartBoxplot = echarts.init(document.getElementById('chart-boxplot'));
+            chartProg = echarts.init(document.getElementById('chart-scatter-prog'));
+            chartIa = echarts.init(document.getElementById('chart-scatter-ia'));
+            chartBd = echarts.init(document.getElementById('chart-scatter-bd'));
+            chartCorr = echarts.init(document.getElementById('chart-correlation'));
+        }
+
+        function showMessage(msg, isError = false) {
+            const el = document.getElementById('status-message');
+            el.style.display = 'block';
+            el.style.backgroundColor = isError ? '#fee2e2' : '#e0f2fe';
+            el.style.color = isError ? '#991b1b' : '#0369a1';
+            el.style.borderColor = isError ? '#f87171' : '#7dd3fc';
+            el.innerText = msg;
+        }
+
+        function hideMessage() {
+            document.getElementById('status-message').style.display = 'none';
+        }
+
+        /**
+         * Buscar e Processar Dados
+         */
+        async function loadData() {
+            if (!SHEET_URL || SHEET_URL === "SUA_URL_DO_GOOGLE_SHEETS_AQUI_FORMATO_PUB_CSV") {
+                showMessage("Por favor, configure a variável SHEET_URL no código com o link do seu CSV.", true);
+                return;
+            }
+
+            try {
+                hideMessage();
+                const btn = document.getElementById('btn-refresh');
+                btn.innerText = "Carregando...";
+                btn.disabled = true;
+
+                // Usando o AllOrigins como alternativa mais estável para evitar o 403 do corsproxy
+                const proxy = 'https://api.allorigins.win/raw?url=';
+                // Adicionamos um timestamp na própria URL da planilha para forçar dados novos no cache do AllOrigins
+                const urlComProxy = proxy + encodeURIComponent(`${SHEET_URL}&t=${Date.now()}`);
+
+                const response = await fetch(urlComProxy, {
+                    method: 'GET',
+                    cache: 'no-store'
+                });
+                
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const csvText = await response.text();
+                const parsedData = parseAndValidateCSV(csvText);
+                
+                if (parsedData.error) {
+                    showMessage(parsedData.error, true);
+                    document.getElementById('dashboard-content').style.display = 'none';
+                } else {
+                    renderDashboard(parsedData.data);
+                    document.getElementById('dashboard-content').style.display = 'grid';
+                    
+                    const now = new Date();
+                    document.getElementById('last-update').innerText = `Atualizado: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+                }
+            } catch (error) {
+                console.error(error);
+                showMessage("Não foi possível carregar os dados devido a um erro de rede ou CORS. Verifique o console.", true);
+            } finally {
+                const btn = document.getElementById('btn-refresh');
+                btn.innerText = "Atualizar Dados";
+                btn.disabled = false;
+            }
+        }
+
+        /**
+         * Parser de CSV Robusto + Normalização
+         */
+        function parseAndValidateCSV(csvText) {
+            // Separação de linhas lidando com aspas duplas (padrão RFC 4180 básico)
+            let p = '', row = [''], ret = [row], i = 0, r = 0, s = !0, l;
+            for (l of csvText) {
+                if ('"' === l) {
+                    if (s && l === p) row[i] += l;
+                    s = !s;
+                } else if (',' === l && s) l = row[++i] = '';
+                else if ('\n' === l && s) {
+                    if ('\r' === p) row[i] = row[i].slice(0, -1);
+                    row = ret[++r] = [l = '']; i = 0;
+                } else row[i] += l;
+                p = l;
+            }
+
+            if (ret.length < 2) return { error: "O arquivo CSV está vazio ou possui apenas cabeçalho." };
+
+            // Normalizar cabeçalhos: minúsculas, remove acentos e espaços/underscores
+            const rawHeaders = ret[0];
+            const headers = rawHeaders.map(h => 
+                h.normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos
+                .toLowerCase()
+                .replace(/[\s_]+/g, '') // remove espaços e underscore
+            );
+
+            // Validação de colunas obrigatórias
+            const missing = MANDATORY_COLUMNS.filter(col => !headers.includes(col));
+            if (missing.length > 0) {
+                return { error: `Estão faltando colunas obrigatórias na planilha: ${missing.join(', ')}` };
+            }
+
+            const data = [];
+            // Parse das linhas
+            for (let j = 1; j < ret.length; j++) {
+                const rowValues = ret[j];
+                // Ignorar linhas vazias
+                if (rowValues.length === 1 && rowValues[0] === '') continue;
+
+                let rowObj = {};
+                let isValidRow = true;
+
+                headers.forEach((h, index) => {
+                    let val = rowValues[index] ? rowValues[index].trim() : '';
+                    
+                    // Conversão de números
+                    if (['programacao', 'inteligenciaartificial', 'bancodedados', 'mediageral'].includes(h)) {
+                        val = val.replace(',', '.'); // ajusta vírgula decimal pt-br
+                        const num = parseFloat(val);
+                        if (isNaN(num)) isValidRow = false;
+                        rowObj[h] = num;
+                    } 
+                    // Conversão genérica de datas (se houvesse coluna de data)
+                    else if (h.includes('data')) {
+                        rowObj[h] = new Date(val);
+                    } 
+                    // Strings normais (idaluno, turno)
+                    else {
+                        rowObj[h] = val;
+                        if(val === '') isValidRow = false; // Ignora se ID ou Turno estiver vazio
+                    }
+                });
+
+                if (isValidRow) data.push(rowObj);
+            }
+
+            if(data.length === 0) return { error: "Nenhum dado válido encontrado após processamento." };
+
+            return { data };
+        }
+
+        /**
+         * Funções Matemáticas / Estatísticas
+         */
+        const math = {
+            mean: arr => arr.reduce((a, b) => a + b, 0) / arr.length,
+            median: arr => {
+                const s = [...arr].sort((a, b) => a - b);
+                const mid = Math.floor(s.length / 2);
+                return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+            },
+            stdDev: arr => {
+                if(arr.length < 2) return 0;
+                const m = math.mean(arr);
+                const varSum = arr.reduce((a, b) => a + Math.pow(b - m, 2), 0);
+                return Math.sqrt(varSum / (arr.length - 1)); // Desvio padrão amostral
+            },
+            pearson: (x, y) => {
+                const n = x.length;
+                const sumX = x.reduce((a, b) => a + b, 0);
+                const sumY = y.reduce((a, b) => a + b, 0);
+                const sumXY = x.reduce((a, val, i) => a + (val * y[i]), 0);
+                const sumX2 = x.reduce((a, b) => a + b * b, 0);
+                const sumY2 = y.reduce((a, b) => a + b * b, 0);
+                const num = (n * sumXY) - (sumX * sumY);
+                const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+                return den === 0 ? 0 : num / den;
+            },
+            // Para boxplot simples: Min, Q1, Median, Q3, Max
+            quantile: (arr, q) => {
+                const sorted = [...arr].sort((a, b) => a - b);
+                const pos = (sorted.length - 1) * q;
+                const base = Math.floor(pos);
+                const rest = pos - base;
+                if (sorted[base + 1] !== undefined) {
+                    return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+                } else {
+                    return sorted[base];
+                }
+            }
+        };
+
+        /**
+         * Motor de Renderização do Dashboard
+         */
+        function renderDashboard(data) {
+            // 1. Agrupar dados por turno
+            const turnos = [...new Set(data.map(d => d.turno))].sort();
+            const dataByTurno = {};
+            turnos.forEach(t => {
+                dataByTurno[t] = data.filter(d => d.turno === t);
+            });
+
+            // 2. Renderizar Tabela
+            renderStatsTable(turnos, dataByTurno);
+
+            // 3. Renderizar Gráfico de Influência (Boxplot Simplificado feito com custom Bar / Candlestick ou Boxplot nativo calculando os 5 valores)
+            renderBoxplot(turnos, dataByTurno);
+
+            // 4. Renderizar Scatter de Disciplinas
+            renderDisciplineScatters(data, turnos);
+
+            // 5. Renderizar Correlação
+            renderCorrelation(data, turnos);
+        }
+
+        function renderStatsTable(turnos, groupedData) {
+            const tbody = document.querySelector('#stats-table tbody');
+            tbody.innerHTML = '';
+            const disciplinas = [
+                { id: 'programacao', label: 'Programação' },
+                { id: 'inteligenciaartificial', label: 'IA' },
+                { id: 'bancodedados', label: 'Banco de Dados' }
+            ];
+
+            turnos.forEach(turno => {
+                const alunosTurno = groupedData[turno];
+                
+                disciplinas.forEach((disc, i) => {
+                    const notas = alunosTurno.map(a => a[disc.id]);
+                    const media = math.mean(notas).toFixed(2);
+                    const mediana = math.median(notas).toFixed(2);
+                    const desv = math.stdDev(notas).toFixed(2);
+                    
+                    const tr = document.createElement('tr');
+                    // Mostrar o nome do turno apenas na primeira linha da disciplina
+                    const turnoCell = i === 0 ? `<b>${turno}</b><br><span style="font-size:0.75rem;color:var(--text-muted)">${disc.label}</span>` : `<span style="font-size:0.75rem;color:var(--text-muted)">${disc.label}</span>`;
+                    const alunosCount = i === 0 ? alunosTurno.length : '-';
+
+                    tr.innerHTML = `
+                        <td>${turnoCell}</td>
+                        <td>${media}</td>
+                        <td>${mediana}</td>
+                        <td>${desv}</td>
+                        <td>${alunosCount}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            });
+        }
+
+        function renderBoxplot(turnos, groupedData) {
+            // ECharts Boxplot requer os dados no formato: [min, Q1, median, Q3, max]
+            const boxData = turnos.map(turno => {
+                const notas = groupedData[turno].map(d => d.mediageral);
+                return [
+                    Math.min(...notas),
+                    math.quantile(notas, 0.25),
+                    math.median(notas),
+                    math.quantile(notas, 0.75),
+                    Math.max(...notas)
+                ];
+            });
+
+            const option = {
+                tooltip: { trigger: 'item', axisPointer: { type: 'shadow' } },
+                grid: { left: '10%', right: '10%', bottom: '15%', top: '10%' },
+                xAxis: {
+                    type: 'category',
+                    data: turnos,
+                    axisLabel: { fontFamily: 'Inter' }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: 'Média Geral',
+                    splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }
+                },
+                series: [
+                    {
+                        name: 'Boxplot',
+                        type: 'boxplot',
+                        data: boxData,
+                        itemStyle: {
+                            color: '#e0f2fe',
+                            borderColor: '#0284c7',
+                            borderWidth: 2
+                        }
+                    }
+                ]
+            };
+            chartBoxplot.setOption(option);
+        }
+
+        function renderDisciplineScatters(data, turnos) {
+            // Paleta para turnos
+            const colors = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
+            
+            const createScatterOption = (title, key) => {
+                const series = turnos.map((turno, idx) => ({
+                    name: turno,
+                    type: 'scatter',
+                    symbolSize: 8,
+                    itemStyle: { color: colors[idx % colors.length] },
+                    data: data.filter(d => d.turno === turno).map(d => [d.idaluno, d[key]])
+                }));
+
+                return {
+                    title: { text: title, left: 'center', textStyle: { fontSize: 14, fontFamily: 'Inter' } },
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: (p) => `Aluno: ${p.data[0]}<br/>Turno: ${p.seriesName}<br/>Nota: ${p.data[1]}`
+                    },
+                    grid: { left: '15%', right: '10%', bottom: '15%', top: '25%' },
+                    xAxis: {
+                        type: 'category',
+                        name: 'Aluno',
+                        show: false // Ocultar o eixo X para ficar mais limpo já que são IDs
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: 'Nota',
+                        splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }
+                    },
+                    series: series
+                };
+            };
+
+            chartProg.setOption(createScatterOption('Programação', 'programacao'));
+            chartIa.setOption(createScatterOption('Intel. Artificial', 'inteligenciaartificial'));
+            chartBd.setOption(createScatterOption('Banco de Dados', 'bancodedados'));
+        }
+
+        function renderCorrelation(data, turnos) {
+            const colors = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
+            
+            // Calculando correlação de Pearson global
+            const xData = data.map(d => d.programacao);
+            const yData = data.map(d => d.inteligenciaartificial);
+            const corr = math.pearson(xData, yData).toFixed(3);
+            
+            let statMsg = `Correlação de Pearson Global: ${corr}`;
+            if(Math.abs(corr) > 0.7) statMsg += ' (Forte)';
+            else if (Math.abs(corr) > 0.3) statMsg += ' (Moderada)';
+            else statMsg += ' (Fraca)';
+
+            const series = turnos.map((turno, idx) => ({
+                name: turno,
+                type: 'scatter',
+                symbolSize: 10,
+                itemStyle: { color: colors[idx % colors.length], opacity: 0.8 },
+                data: data.filter(d => d.turno === turno).map(d => [d.programacao, d.inteligenciaartificial, d.idaluno])
+            }));
+
+            const option = {
+                title: {
+                    text: statMsg,
+                    left: 'center',
+                    top: 0,
+                    textStyle: { fontSize: 13, color: '#64748b', fontWeight: 'normal', fontFamily: 'Inter' }
+                },
+                legend: {
+                    bottom: 0,
+                    data: turnos
+                },
+                tooltip: {
+                    trigger: 'item',
+                    formatter: function (param) {
+                        return `Turno: ${param.seriesName}<br/>
+                                Aluno ID: ${param.data[2]}<br/>
+                                Prog: ${param.data[0]} | IA: ${param.data[1]}`;
+                    }
+                },
+                grid: { left: '10%', right: '10%', bottom: '15%', top: '15%' },
+                xAxis: {
+                    type: 'value',
+                    name: 'Nota - Programação',
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: 'Nota - Inteligência Artificial',
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }
+                },
+                series: series
+            };
+
+            chartCorr.setOption(option);
+        }
+
+    </script>
+</body>
+</html>
